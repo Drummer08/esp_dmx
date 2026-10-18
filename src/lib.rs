@@ -1,0 +1,127 @@
+#![no_std]
+
+use esp_hal::delay::Delay;
+use esp_hal::gpio::{Level, Output, OutputConfig, OutputPin, interconnect::PeripheralOutput};
+
+use esp_hal::uart::{Config, DataBits, Instance, Parity, StopBits, Uart};
+use esp_hal::{Blocking, DriverMode};
+
+#[cfg(feature = "async")]
+use esp_hal::Async;
+
+#[cfg(feature = "async")]
+use embassy_time::{Delay as EmbassyDelay, Duration, Timer};
+
+const BREAK_BITS: u32 = 25;
+const MAB_US: u32 = 20; // mark after break
+// const SHIFT_REGISTER_DRAIN_US: u32 = 44;
+
+#[derive(Debug)]
+pub enum DmxError {
+    ChannelOutOfRange,
+}
+
+pub struct DMX<'d, Dm: DriverMode> {
+    uart: Uart<'d, Dm>,
+    en_pin: Output<'d>,
+    universe: [u8; 513],
+}
+
+impl<'d> DMX<'d, Blocking> {
+    pub fn new(
+        uart: impl Instance + 'd,
+        tx: impl PeripheralOutput<'d>,
+        enable_pin: impl OutputPin + 'd,
+    ) -> Self {
+        let uart = Uart::new(
+            uart,
+            Config::default()
+                .with_baudrate(250_000)
+                .with_data_bits(DataBits::_8)
+                .with_parity(Parity::None)
+                .with_stop_bits(StopBits::_2),
+        )
+        .unwrap()
+        .with_tx(tx);
+        let en_pin = Output::new(enable_pin, Level::Low, OutputConfig::default());
+        let universe = [0u8; 513];
+
+        Self {
+            uart,
+            en_pin,
+            universe,
+        }
+    }
+
+    #[cfg(feature = "async")]
+    pub fn into_async(self) -> DMX<'d, Async> {
+        DMX {
+            uart: self.uart.into_async(),
+            en_pin: self.en_pin,
+            universe: self.universe,
+        }
+    }
+
+    pub fn send_frame(&mut self) {
+        let delay = Delay::new();
+
+        // enable max3485 driver output
+        self.en_pin.set_high();
+
+        // BREAK: for 100 µs
+        self.uart.send_break(BREAK_BITS);
+
+        delay.delay_micros(MAB_US);
+
+        // --- DMX data ---
+        self.uart.write(&self.universe).unwrap();
+        self.uart.flush().unwrap();
+
+        // shift register drain (only for saftey needed)
+        // needs to be tested if its even necessary
+        // delay.delay_micros(SHIFT_REGISTER_DRAIN_US);
+
+        self.en_pin.set_low();
+    }
+}
+
+#[cfg(feature = "async")]
+impl<'d> DMX<'d, Async> {
+    pub async fn send_frame_async(&mut self) {
+        let mut delay = EmbassyDelay;
+
+        // enable max3485 driver output
+        self.en_pin.set_high();
+
+        // BREAK: for 100 µs
+        self.uart.send_break_async(&mut delay, BREAK_BITS).await;
+
+        Timer::after(Duration::from_micros(MAB_US as u64)).await;
+
+        // --- DMX data ---
+        self.uart.write_async(&self.universe).await.unwrap();
+        self.uart.flush_async().await.unwrap();
+
+        // shift register drain
+        Timer::after(Duration::from_micros(SHIFT_REGISTER_DRAIN_US as u64)).await;
+
+        self.en_pin.set_low();
+    }
+}
+
+impl<'d, Dm> DMX<'d, Dm>
+where
+    Dm: DriverMode,
+{
+    pub fn set_universe(&mut self, universe: [u8; 513]) {
+        self.universe = universe;
+    }
+
+    pub fn set_channel(&mut self, channel: usize, value: u8) -> Result<(), DmxError> {
+        if channel == 0 || channel > 512 {
+            return Err(DmxError::ChannelOutOfRange);
+        }
+        self.universe[channel] = value;
+        Ok(())
+    }
+}
