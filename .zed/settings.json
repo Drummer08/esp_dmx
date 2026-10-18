@@ -3,7 +3,7 @@
     "rust-analyzer": {
       "initialization_options": {
         "cargo": {
-          "features": ["esp32c6", "unstable"],
+          "features": ["esp32c6", "unstable", "async"],
           "target": "riscv32imac-unknown-none-elf"
         },
         "check": {

@@ -10,11 +10,10 @@ use esp_hal::{Blocking, DriverMode};
 use esp_hal::Async;
 
 #[cfg(feature = "async")]
-use embassy_time::{Delay as EmbassyDelay, Duration, Timer};
+use embedded_hal_async::delay::DelayNs;
 
 const BREAK_BITS: u32 = 25;
 const MAB_US: u32 = 20; // mark after break
-// const SHIFT_REGISTER_DRAIN_US: u32 = 44;
 
 #[derive(Debug)]
 pub enum DmxError {
@@ -48,14 +47,11 @@ impl<'d> DMX<'d, Blocking> {
     pub fn into_async(self) -> DMX<'d, Async> {
         DMX {
             uart: self.uart.into_async(),
-            en_pin: self.en_pin,
             universe: self.universe,
         }
     }
 
-    pub fn send_frame(&mut self) {
-        let delay = Delay::new();
-
+    pub fn send_frame(&mut self, delay: &Delay) {
         // BREAK: for 100 µs
         self.uart.send_break(BREAK_BITS);
 
@@ -69,13 +65,11 @@ impl<'d> DMX<'d, Blocking> {
 
 #[cfg(feature = "async")]
 impl<'d> DMX<'d, Async> {
-    pub async fn send_frame_async(&mut self) {
-        let mut delay = EmbassyDelay;
-
+    pub async fn send_frame_async<D: DelayNs>(&mut self, delay: &mut D) {
         // BREAK: for 100 µs
-        self.uart.send_break_async(&mut delay, BREAK_BITS).await;
+        self.uart.send_break_async(delay, BREAK_BITS).await;
 
-        Timer::after(Duration::from_micros(MAB_US as u64)).await;
+        delay.delay_us(MAB_US).await;
 
         // --- DMX data ---
         self.uart.write_async(&self.universe).await.unwrap();
