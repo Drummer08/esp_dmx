@@ -1,7 +1,7 @@
 #![no_std]
 
 use esp_hal::delay::Delay;
-use esp_hal::gpio::{Level, Output, OutputConfig, OutputPin, interconnect::PeripheralOutput};
+use esp_hal::gpio::interconnect::PeripheralOutput;
 
 use esp_hal::uart::{Config, DataBits, Instance, Parity, StopBits, Uart};
 use esp_hal::{Blocking, DriverMode};
@@ -23,16 +23,11 @@ pub enum DmxError {
 
 pub struct DMX<'d, Dm: DriverMode> {
     uart: Uart<'d, Dm>,
-    en_pin: Output<'d>,
     universe: [u8; 513],
 }
 
 impl<'d> DMX<'d, Blocking> {
-    pub fn new(
-        uart: impl Instance + 'd,
-        tx: impl PeripheralOutput<'d>,
-        enable_pin: impl OutputPin + 'd,
-    ) -> Self {
+    pub fn new(uart: impl Instance + 'd, tx: impl PeripheralOutput<'d>) -> Self {
         let uart = Uart::new(
             uart,
             Config::default()
@@ -43,14 +38,10 @@ impl<'d> DMX<'d, Blocking> {
         )
         .unwrap()
         .with_tx(tx);
-        let en_pin = Output::new(enable_pin, Level::Low, OutputConfig::default());
+
         let universe = [0u8; 513];
 
-        Self {
-            uart,
-            en_pin,
-            universe,
-        }
+        Self { uart, universe }
     }
 
     #[cfg(feature = "async")]
@@ -65,9 +56,6 @@ impl<'d> DMX<'d, Blocking> {
     pub fn send_frame(&mut self) {
         let delay = Delay::new();
 
-        // enable max3485 driver output
-        self.en_pin.set_high();
-
         // BREAK: for 100 µs
         self.uart.send_break(BREAK_BITS);
 
@@ -76,12 +64,6 @@ impl<'d> DMX<'d, Blocking> {
         // --- DMX data ---
         self.uart.write(&self.universe).unwrap();
         self.uart.flush().unwrap();
-
-        // shift register drain (only for saftey needed)
-        // needs to be tested if its even necessary
-        // delay.delay_micros(SHIFT_REGISTER_DRAIN_US);
-
-        self.en_pin.set_low();
     }
 }
 
@@ -89,9 +71,6 @@ impl<'d> DMX<'d, Blocking> {
 impl<'d> DMX<'d, Async> {
     pub async fn send_frame_async(&mut self) {
         let mut delay = EmbassyDelay;
-
-        // enable max3485 driver output
-        self.en_pin.set_high();
 
         // BREAK: for 100 µs
         self.uart.send_break_async(&mut delay, BREAK_BITS).await;
@@ -101,11 +80,6 @@ impl<'d> DMX<'d, Async> {
         // --- DMX data ---
         self.uart.write_async(&self.universe).await.unwrap();
         self.uart.flush_async().await.unwrap();
-
-        // shift register drain
-        Timer::after(Duration::from_micros(SHIFT_REGISTER_DRAIN_US as u64)).await;
-
-        self.en_pin.set_low();
     }
 }
 
