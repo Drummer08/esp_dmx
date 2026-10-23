@@ -8,8 +8,8 @@ default-target = "riscv32imac-unknown-none-elf"
 features = ["esp32c6", "unstable"]
 
 [dependencies]
-embedded-hal-async = { version = "1.0.0", optional = true }
 esp-hal = { version = "1.2.0", default-features = false, features = ["requires-unstable"] }
+embedded-hal-async = { version = "1.0.0", optional = true }
 
 [features]
 esp32c3 = ["esp-hal/esp32c3"]
