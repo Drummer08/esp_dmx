@@ -1,4 +1,37 @@
+//! DMX512 transmitter driver for ESP32 chips, built on [`esp-hal`](https://docs.rs/esp-hal).
+//!
+//! The driver uses a UART at 250 kbaud (8 data bits, no parity, 2 stop bits) and sends
+//! a full universe of 512 channels plus the start code on every frame. An RS-485
+//! transceiver (for example a MAX3485) is needed between the TX pin and the DMX cable.
+//!
+//! # Features
+//!
+//! * `esp32c3`, `esp32c6`: select a chip. Only needed when building this crate on its
+//!   own. In an application, enable the chip feature on `esp-hal` instead.
+//! * `unstable`: forwards to `esp-hal/unstable`.
+//! * `async`: enables `Dmx::into_async` and `Dmx::send_frame_async`.
+//!
+//! # Example
+//!
+//! ```rust,ignore
+//! use esp_dmx::{Channel, Dmx, Timing};
+//!
+//! let mut dmx = Dmx::new(peripherals.UART1, peripherals.GPIO4, Timing::default())?;
+//! dmx.set_channel(Channel::new(1)?, 255);
+//!
+//! let delay = esp_hal::delay::Delay::new();
+//! loop {
+//!     dmx.send_frame(&delay)?;
+//! }
+//! ```
+//!
+//! # Channels
+//!
+//! DMX channels are numbered from 1 to 512. Slot 0 of a frame is the start code, which is
+//! always `0x00` and cannot be changed through this API.
+
 #![no_std]
+#![warn(missing_docs)]
 
 use core::num::NonZeroU16;
 
@@ -23,9 +56,11 @@ const BIT_US: u32 = 1_000_000 / BAUD;
 // Errors
 // ---------------------------------------------------------------------------
 
+/// Errors returned by this crate.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[non_exhaustive]
 pub enum DmxError {
+    /// A channel number outside `1..=512`, or a write that would run past channel 512.
     ChannelOutOfRange,
     /// The UART configuration was rejected.
     Config(ConfigError),
@@ -49,11 +84,17 @@ impl From<TxError> for DmxError {
 // Timing
 // ---------------------------------------------------------------------------
 
+/// Length of the break: the low period that marks the start of a frame.
+///
+/// Stored in microseconds. Values below [`Break::MIN_US`] are raised to that minimum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Break(u32); // microseconds
+pub struct Break(u32);
 
 impl Break {
+    /// Minimum break a transmitter should send, in microseconds (DMX512 spec).
     pub const MIN_US: u32 = 92;
+
+    /// Creates a break of `us` microseconds, raised to [`Break::MIN_US`] if shorter.
     pub fn from_micros(us: u32) -> Self {
         if us < Self::MIN_US {
             Self(Self::MIN_US)
@@ -62,20 +103,28 @@ impl Break {
         }
     }
 
+    /// Break length in UART bit times, rounded up so it is never shorter than requested.
     pub(crate) fn bits(self) -> u32 {
         self.0.div_ceil(BIT_US)
     }
 
+    /// Returns the break length in microseconds.
     pub fn as_micros(self) -> u32 {
         self.0
     }
 }
 
+/// Length of the mark after break (MAB): the high period between the break and the start code.
+///
+/// Stored in microseconds. Values below [`Mab::MIN_US`] are raised to that minimum.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Mab(u32); // microseconds
+pub struct Mab(u32);
 
 impl Mab {
+    /// Minimum mark after break a transmitter should send, in microseconds (DMX512 spec).
     pub const MIN_US: u32 = 12;
+
+    /// Creates a mark after break of `us` microseconds, raised to [`Mab::MIN_US`] if shorter.
     pub fn from_micros(us: u32) -> Self {
         if us < Self::MIN_US {
             Self(Self::MIN_US)
@@ -84,11 +133,15 @@ impl Mab {
         }
     }
 
+    /// Returns the mark after break in microseconds.
     pub fn as_micros(self) -> u32 {
         self.0
     }
 }
 
+/// Break and mark-after-break timing of a frame.
+///
+/// [`Timing::default`] uses a 176 µs break and a 12 µs mark after break.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timing {
     brk: Break,
@@ -96,14 +149,17 @@ pub struct Timing {
 }
 
 impl Timing {
+    /// Creates a timing from a break and a mark after break.
     pub fn new(brk: Break, mab: Mab) -> Self {
         Self { brk, mab }
     }
 
+    /// Returns the break.
     pub fn brk(&self) -> Break {
         self.brk
     }
 
+    /// Returns the mark after break.
     pub fn mab(&self) -> Mab {
         self.mab
     }
@@ -122,13 +178,21 @@ impl Default for Timing {
 // Channel
 // ---------------------------------------------------------------------------
 
+/// A DMX channel number in the range `1..=512`.
+///
+/// Channels are 1-based, as in the DMX512 specification.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Channel(NonZeroU16);
 
 impl Channel {
+    /// Lowest valid channel number.
     pub const MIN: u16 = 1;
+    /// Highest valid channel number.
     pub const MAX: u16 = 512;
 
+    /// Creates a channel from a number.
+    ///
+    /// Returns [`DmxError::ChannelOutOfRange`] if `value` is 0 or greater than 512.
     pub fn new(value: u16) -> Result<Self, DmxError> {
         Self::try_from(value)
     }
@@ -156,13 +220,23 @@ impl TryFrom<u16> for Channel {
 // Driver
 // ---------------------------------------------------------------------------
 
+/// DMX512 transmitter.
+///
+/// Holds one universe (512 channels plus start code) and sends it with `send_frame` or,
+/// with the `async` feature, `send_frame_async`. Changes to the channel values only
+/// become visible on the wire with the next frame.
 pub struct Dmx<'d, Dm: DriverMode> {
     uart: Uart<'d, Dm>,
+    /// Index 0 is the start code (always 0), 1..=512 are the channels.
     universe: [u8; Channel::MAX as usize + 1],
     timing: Timing,
 }
 
 impl<'d> Dmx<'d, Blocking> {
+    /// Creates a transmitter on the given UART and TX pin.
+    ///
+    /// All channels start at 0. Returns [`DmxError::Config`] if the UART rejects the
+    /// 250 kbaud 8N2 configuration.
     pub fn new(
         uart: impl Instance + 'd,
         tx: impl PeripheralOutput<'d>,
@@ -187,6 +261,7 @@ impl<'d> Dmx<'d, Blocking> {
         })
     }
 
+    /// Creates a transmitter with the default [`Timing`].
     pub fn with_defaults(
         uart: impl Instance + 'd,
         tx: impl PeripheralOutput<'d>,
@@ -194,6 +269,9 @@ impl<'d> Dmx<'d, Blocking> {
         Self::new(uart, tx, Timing::default())
     }
 
+    /// Converts the transmitter to async mode.
+    ///
+    /// Available with the `async` feature.
     #[cfg(feature = "async")]
     pub fn into_async(self) -> Dmx<'d, Async> {
         Dmx {
@@ -203,6 +281,10 @@ impl<'d> Dmx<'d, Blocking> {
         }
     }
 
+    /// Sends one frame: break, mark after break, start code and 512 channels.
+    ///
+    /// Blocks until the last byte has left the UART. The break and the mark after break are
+    /// timed with busy waits, so the CPU is occupied for the whole frame (about 23 ms).
     pub fn send_frame(&mut self, delay: &Delay) -> Result<(), DmxError> {
         self.uart.send_break(self.timing.brk().bits());
 
@@ -217,6 +299,12 @@ impl<'d> Dmx<'d, Blocking> {
 
 #[cfg(feature = "async")]
 impl<'d> Dmx<'d, Async> {
+    /// Sends one frame: break, mark after break, start code and 512 channels.
+    ///
+    /// Waits are done with `.await`, so other tasks can run in between. The break and mark
+    /// after break are only as accurate as the supplied `delay` and the executor.
+    ///
+    /// Available with the `async` feature.
     pub async fn send_frame_async<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), DmxError> {
         self.uart
             .send_break_async(delay, self.timing.brk().bits())
@@ -235,42 +323,55 @@ impl<'d, Dm> Dmx<'d, Dm>
 where
     Dm: DriverMode,
 {
+    /// Returns the current break and mark-after-break timing.
     pub fn timing(&self) -> Timing {
         self.timing
     }
 
+    /// Sets the break and mark-after-break timing used for following frames.
     pub fn set_timing(&mut self, timing: Timing) {
         self.timing = timing;
     }
 
+    /// Replaces all 512 channel values. Index 0 of the array is channel 1.
     pub fn set_universe(&mut self, universe: [u8; Channel::MAX as usize]) {
         self.universe[1..].copy_from_slice(&universe);
     }
 
+    /// Sets all channels to 0.
     pub fn clear(&mut self) {
         self.universe[1..].fill(0);
     }
 
+    /// Sets all channels to `value`.
     pub fn fill(&mut self, value: u8) {
         self.universe[1..].fill(value);
     }
 
+    /// Returns the 512 channel values. Index 0 of the slice is channel 1.
     pub fn channels(&self) -> &[u8] {
         &self.universe[1..]
     }
 
+    /// Returns the 512 channel values mutably. Index 0 of the slice is channel 1.
     pub fn channels_mut(&mut self) -> &mut [u8] {
         &mut self.universe[1..]
     }
 
+    /// Sets a single channel.
     pub fn set_channel(&mut self, channel: Channel, value: u8) {
         self.universe[usize::from(channel)] = value;
     }
 
+    /// Returns the value of a single channel.
     pub fn get_channel(&self, channel: Channel) -> u8 {
         self.universe[usize::from(channel)]
     }
 
+    /// Writes consecutive values starting at `start_channel`.
+    ///
+    /// Returns [`DmxError::ChannelOutOfRange`] if the values would run past channel 512.
+    /// In that case nothing is written.
     pub fn set_channels(&mut self, start_channel: Channel, values: &[u8]) -> Result<(), DmxError> {
         let start: usize = usize::from(start_channel);
         let end = start + values.len();
@@ -281,6 +382,9 @@ where
         Ok(())
     }
 
+    /// Writes red, green and blue to three consecutive channels starting at `start_channel`.
+    ///
+    /// Returns [`DmxError::ChannelOutOfRange`] if the three channels do not fit.
     pub fn set_rgb(&mut self, start_channel: Channel, r: u8, g: u8, b: u8) -> Result<(), DmxError> {
         self.set_channels(start_channel, &[r, g, b])
     }
