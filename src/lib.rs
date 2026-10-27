@@ -1,37 +1,7 @@
-//! DMX512 transmitter driver for ESP32 chips, built on [`esp-hal`](https://docs.rs/esp-hal).
-//!
-//! The driver uses a UART at 250 kbaud (8 data bits, no parity, 2 stop bits) and sends
-//! a full universe of 512 channels plus the start code on every frame. An RS-485
-//! transceiver (for example a MAX3485) is needed between the TX pin and the DMX cable.
-//!
-//! # Features
-//!
-//! * `esp32c3`, `esp32c6`: select a chip. Only needed when building this crate on its
-//!   own. In an application, enable the chip feature on `esp-hal` instead.
-//! * `unstable`: forwards to `esp-hal/unstable`.
-//! * `async`: enables `Dmx::into_async` and `Dmx::send_frame_async`.
-//!
-//! # Example
-//!
-//! ```rust,ignore
-//! use esp_dmx::{Channel, Dmx, Timing};
-//!
-//! let mut dmx = Dmx::new(peripherals.UART1, peripherals.GPIO4, Timing::default())?;
-//! dmx.set_channel(Channel::new(1)?, 255);
-//!
-//! let delay = esp_hal::delay::Delay::new();
-//! loop {
-//!     dmx.send_frame(&delay)?;
-//! }
-//! ```
-//!
-//! # Channels
-//!
-//! DMX channels are numbered from 1 to 512. Slot 0 of a frame is the start code, which is
-//! always `0x00` and cannot be changed through this API.
-
+#![doc = include_str!("../README.md")]
 #![no_std]
 #![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use core::num::NonZeroU16;
 
@@ -141,7 +111,24 @@ impl Mab {
 
 /// Break and mark-after-break timing of a frame.
 ///
+/// A DMX frame starts with:
+///
+/// - [`Break`] (low)
+/// - [`Mab`] (high)
+/// - Start code
+/// - Channel data
+///
 /// [`Timing::default`] uses a 176 µs break and a 12 µs mark after break.
+///
+/// # Examples
+///
+/// ```
+/// use esp_dmx::{Timing, Break, Mab};
+///
+/// let timing = Timing::default();
+/// assert_eq!(timing.brk().as_micros(), 176);
+/// assert_eq!(timing.mab().as_micros(), 12);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Timing {
     brk: Break,
@@ -180,7 +167,19 @@ impl Default for Timing {
 
 /// A DMX channel number in the range `1..=512`.
 ///
-/// Channels are 1-based, as in the DMX512 specification.
+/// DMX channels start at [`Channel::MIN`], not 0 and go up to [`Channel::MAX`].
+///
+/// Slot 0 of a DMX frame is the start code and is not represented by
+/// [`Channel`]. This crate always transmits a start code of `0x00`.
+///
+/// # Examples
+///
+/// ```
+/// use esp_dmx::Channel;
+///
+/// let channel = Channel::new(1).unwrap();
+/// assert_eq!(usize::from(channel), 1);
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Channel(NonZeroU16);
 
@@ -220,11 +219,17 @@ impl TryFrom<u16> for Channel {
 // Driver
 // ---------------------------------------------------------------------------
 
-/// DMX512 transmitter.
+/// DMX512 Transmitter.
 ///
-/// Holds one universe (512 channels plus start code) and sends it with `send_frame` or,
-/// with the `async` feature, `send_frame_async`. Changes to the channel values only
-/// become visible on the wire with the next frame.
+/// Holds one universe (512 channels plus start code) and sends it with [`Dmx::send_frame`] or,
+/// with the `async` feature, [`Dmx::send_frame_async`].
+///
+/// Internally, one complete DMX universe is stored:
+///
+/// - slot 0: start code (`0x00`)
+/// - slots 1..=512: DMX channels
+///
+/// The start code is managed by the driver and cannot be modified.
 pub struct Dmx<'d, Dm: DriverMode> {
     uart: Uart<'d, Dm>,
     /// Index 0 is the start code (always 0), 1..=512 are the channels.
@@ -233,7 +238,7 @@ pub struct Dmx<'d, Dm: DriverMode> {
 }
 
 impl<'d> Dmx<'d, Blocking> {
-    /// Creates a transmitter on the given UART and TX pin.
+    /// Creates a transmitter on the given UART and TX pin using the supplied [`Timing`] configuration.
     ///
     /// All channels start at 0. Returns [`DmxError::Config`] if the UART rejects the
     /// 250 kbaud 8N2 configuration.
@@ -273,6 +278,7 @@ impl<'d> Dmx<'d, Blocking> {
     ///
     /// Available with the `async` feature.
     #[cfg(feature = "async")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
     pub fn into_async(self) -> Dmx<'d, Async> {
         Dmx {
             uart: self.uart.into_async(),
@@ -305,6 +311,7 @@ impl<'d> Dmx<'d, Async> {
     /// after break are only as accurate as the supplied `delay` and the executor.
     ///
     /// Available with the `async` feature.
+    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
     pub async fn send_frame_async<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), DmxError> {
         self.uart
             .send_break_async(delay, self.timing.brk().bits())
@@ -323,12 +330,12 @@ impl<'d, Dm> Dmx<'d, Dm>
 where
     Dm: DriverMode,
 {
-    /// Returns the current break and mark-after-break timing.
+    /// Returns the current [`Timing`].
     pub fn timing(&self) -> Timing {
         self.timing
     }
 
-    /// Sets the break and mark-after-break timing used for following frames.
+    /// Sets the [`Timing`] used for following frames.
     pub fn set_timing(&mut self, timing: Timing) {
         self.timing = timing;
     }
@@ -358,19 +365,19 @@ where
         &mut self.universe[1..]
     }
 
-    /// Sets a single channel.
+    /// Sets a single [`Channel`] to the given value.
     pub fn set_channel(&mut self, channel: Channel, value: u8) {
         self.universe[usize::from(channel)] = value;
     }
 
-    /// Returns the value of a single channel.
+    /// Returns the value of a single [`Channel`].
     pub fn get_channel(&self, channel: Channel) -> u8 {
         self.universe[usize::from(channel)]
     }
 
     /// Writes consecutive values starting at `start_channel`.
     ///
-    /// Returns [`DmxError::ChannelOutOfRange`] if the values would run past channel 512.
+    /// Returns [`DmxError::ChannelOutOfRange`] if the values would run past [`Channel::MAX`].
     /// In that case nothing is written.
     pub fn set_channels(&mut self, start_channel: Channel, values: &[u8]) -> Result<(), DmxError> {
         let start: usize = usize::from(start_channel);
@@ -382,7 +389,7 @@ where
         Ok(())
     }
 
-    /// Writes red, green and blue to three consecutive channels starting at `start_channel`.
+    /// Writes red, green and blue to three consecutive [`Channel`]s starting at `start_channel`.
     ///
     /// Returns [`DmxError::ChannelOutOfRange`] if the three channels do not fit.
     pub fn set_rgb(&mut self, start_channel: Channel, r: u8, g: u8, b: u8) -> Result<(), DmxError> {

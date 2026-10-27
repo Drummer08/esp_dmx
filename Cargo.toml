@@ -1,11 +1,19 @@
 [package]
-name = "esp_dmx"
+name = "esp-dmx"
 version = "0.1.0"
 edition = "2024"
+description = "DMX512 transmitter for ESP microcontrollers using esp-hal"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Drummer08/esp_dmx"
+readme = "README.md"
+keywords = ["dmx", "esp", "lighting", "uart"]
+categories = ["embedded", "no-std"]
 
 [package.metadata.docs.rs]
 default-target = "riscv32imac-unknown-none-elf"
-features = ["esp32c6", "unstable"]
+features = ["esp32c6", "unstable", "async"]
+all-features = false
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 esp-hal = { version = "1.2.0", default-features = false, features = ["requires-unstable"] }

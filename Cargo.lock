@@ -391,6 +391,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "esp-dmx"
+version = "0.1.0"
+dependencies = [
+ "embedded-hal-async",
+ "esp-hal",
+]
+
+[[package]]
 name = "esp-hal"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -512,14 +520,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a207a5d6886ca89b4f220606dcf3779ca869803df192508314939186ae8de1ee"
 dependencies = [
  "vcell",
-]
-
-[[package]]
-name = "esp_dmx"
-version = "0.1.0"
-dependencies = [
- "embedded-hal-async",
- "esp-hal",
 ]
 
 [[package]]
