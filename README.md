@@ -25,17 +25,32 @@ This is a basic wiring with a MAX3485 chip ([detailed schematic](https://raw.git
 
 ## Quick Start
 
+Blocking
 ```rust,ignore
 use esp_dmx::{Channel, Dmx, Timing};
 
-let mut dmx = Dmx::new(peripherals.UART1, peripherals.GPIO4, Timing::default())?;
-dmx.set_channel(Channel::new(1)?, 255);
+let mut dmx = Dmx::with_defaults(peripherals.UART1, peripherals.GPIO4).unwrap();
+dmx.set_channel(Channel::new(1).unwrap(), 255);
 
 let delay = esp_hal::delay::Delay::new();
 loop {
-    dmx.send_frame(&delay)?;
+    dmx.send_frame(&delay).unwrap();
 }
 ```
+Async using Embassy
+```rust,ignore
+use esp_dmx::{Channel, Dmx, Timing};
+use embassy_time::Delay;
+
+let mut dmx = Dmx::with_defaults(peripherals.UART1, peripherals.GPIO4).unwrap().into_async();
+dmx.set_channel(Channel::new(1).unwrap(), 255);
+
+let mut delay = embassy_time::Delay;
+loop {
+    dmx.send_frame_async(&mut delay).await.unwrap();
+}
+```
+
 
 ## Features
 
@@ -47,7 +62,8 @@ loop {
 
 ## Examples
 
-link to example repo for blocking and async dir with full examples
+- [Blocking esp32c6 project setup](https://github.com/Drummer08/esp_dmx_example)  
+- [Async esp32c6 project setup](https://github.com/Drummer08/esp_dmx_example_async)
 
 ## Key Types
 
