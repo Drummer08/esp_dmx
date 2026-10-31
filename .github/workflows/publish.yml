@@ -24,7 +24,7 @@ jobs:
       - name: Check ESP32-C3
         run: cargo check --features esp32c3,unstable --target riscv32imc-unknown-none-elf
 
-      - name: Check ESP32-C3
+      - name: Check ESP32-C3 with async
         run: cargo check --features esp32c3,unstable,async --target riscv32imc-unknown-none-elf
 
       - name: Check ESP32-C6
