@@ -12,7 +12,6 @@ categories = ["embedded", "no-std"]
 [package.metadata.docs.rs]
 default-target = "riscv32imac-unknown-none-elf"
 features = ["esp32c6", "unstable", "async"]
-rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 esp-hal = { version = "1.2.0", default-features = false, features = ["requires-unstable"] }

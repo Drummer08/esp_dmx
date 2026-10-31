@@ -1,7 +1,6 @@
 #![doc = include_str!("../README.md")]
 #![no_std]
 #![warn(missing_docs)]
-#![cfg_attr(docsrs, feature(doc_cfg))]
 
 use core::num::NonZeroU16;
 
@@ -123,7 +122,7 @@ impl Mab {
 /// # Examples
 ///
 /// ```rust,ignore
-/// use esp_dmx::{Timing, Break, Mab};
+/// use esp_dmx::Timing;
 ///
 /// let timing = Timing::default();
 /// assert_eq!(timing.brk().as_micros(), 176);
@@ -278,7 +277,6 @@ impl<'d> Dmx<'d, Blocking> {
     ///
     /// Available with the `async` feature.
     #[cfg(feature = "async")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
     pub fn into_async(self) -> Dmx<'d, Async> {
         Dmx {
             uart: self.uart.into_async(),
@@ -311,7 +309,6 @@ impl<'d> Dmx<'d, Async> {
     /// after break are only as accurate as the supplied `delay` and the executor.
     ///
     /// Available with the `async` feature.
-    #[cfg_attr(docsrs, doc(cfg(feature = "async")))]
     pub async fn send_frame_async<D: DelayNs>(&mut self, delay: &mut D) -> Result<(), DmxError> {
         self.uart
             .send_break_async(delay, self.timing.brk().bits())
