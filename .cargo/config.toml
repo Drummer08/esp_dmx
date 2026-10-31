@@ -1,0 +1,2 @@
+[alias]
+doc-c6 = "doc --no-deps --open --features esp32c6,unstable,async --target riscv32imac-unknown-none-elf"
