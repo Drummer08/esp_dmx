@@ -27,7 +27,7 @@ This is a basic wiring with a MAX3485 chip ([detailed schematic](https://raw.git
 
 Blocking
 ```rust,ignore
-use esp_dmx::{Channel, Dmx, Timing};
+use esp_dmx::{Channel, Dmx};
 
 let mut dmx = Dmx::with_defaults(peripherals.UART1, peripherals.GPIO4).unwrap();
 dmx.set_channel(Channel::new(1).unwrap(), 255);
@@ -39,13 +39,13 @@ loop {
 ```
 Async using Embassy
 ```rust,ignore
-use esp_dmx::{Channel, Dmx, Timing};
+use esp_dmx::{Channel, Dmx};
 use embassy_time::Delay;
 
 let mut dmx = Dmx::with_defaults(peripherals.UART1, peripherals.GPIO4).unwrap().into_async();
 dmx.set_channel(Channel::new(1).unwrap(), 255);
 
-let mut delay = embassy_time::Delay;
+let mut delay = Delay;
 loop {
     dmx.send_frame_async(&mut delay).await.unwrap();
 }

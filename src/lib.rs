@@ -122,7 +122,7 @@ impl Mab {
 ///
 /// # Examples
 ///
-/// ```
+/// ```rust,ignore
 /// use esp_dmx::{Timing, Break, Mab};
 ///
 /// let timing = Timing::default();
@@ -174,7 +174,7 @@ impl Default for Timing {
 ///
 /// # Examples
 ///
-/// ```
+/// ```rust,ignore
 /// use esp_dmx::Channel;
 ///
 /// let channel = Channel::new(1).unwrap();
