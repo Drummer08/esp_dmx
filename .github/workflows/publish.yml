@@ -8,11 +8,10 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: riscv32imc-unknown-none-elf,riscv32imac-unknown-none-elf
+      - name: Add targets
+        run: rustup target add riscv32imc-unknown-none-elf riscv32imac-unknown-none-elf
 
       - name: Tag must match the version in Cargo.toml
         run: |
@@ -25,7 +24,7 @@ jobs:
       - name: Check ESP32-C3
         run: cargo check --features esp32c3,unstable --target riscv32imc-unknown-none-elf
 
-      - name: Check ESP32-C3 with async
+      - name: Check ESP32-C3
         run: cargo check --features esp32c3,unstable,async --target riscv32imc-unknown-none-elf
 
       - name: Check ESP32-C6
