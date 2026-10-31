@@ -12,7 +12,6 @@ categories = ["embedded", "no-std"]
 [package.metadata.docs.rs]
 default-target = "riscv32imac-unknown-none-elf"
 features = ["esp32c6", "unstable", "async"]
-all-features = false
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
